@@ -1,0 +1,349 @@
+//As an overall note: Noel Gorelick from GEE advises against for-loops. Therefore,
+//each year was classified with a separate code. Makes the code very lengthy and repetitive!
+
+// Use these bands for prediction.
+var bands = ['B2', 'B3', 'B4', 'B5', 'B6', 'B7', 'B8'];
+var bands5 = ['B1', 'B2', 'B3', 'B4', 'B5','B6', 'B7'];
+
+//Define variables for each image over area of interest.
+var im86 = ee.Image('LANDSAT/LT5_L1T_TOA/LT50190501986353XXX03').select(bands5);
+var im96 = ee.Image('LANDSAT/LT5_L1T_TOA/LT50190501997015XXX01').select(bands5);
+var im00 = ee.Image('LANDSAT/LT5_L1T_TOA/LT50190502001042XXX02').select(bands5);
+var im09 = ee.Image('LANDSAT/LT5_L1T_TOA/LT50190502010019CHM00').select(bands5);
+var im14 = ee.Image('LC8_L1T/LC80190502015001LGN00').select(bands);
+var im15 = ee.Image('LC8_L1T/LC80190502016020LGN00').select(bands);
+
+//Load training polygons from a Fusion Table.
+var poly1986 = ee.FeatureCollection('ft:1bkOMwCjZyjGW3GB6n47VRdb-f4PJqXfvNOEDL4mM');
+var poly1996 = ee.FeatureCollection('ft:1U3MxeKIlCIILLMsJSiFh10CyKq64X2uUW5rBwSQx');
+var poly2000 = ee.FeatureCollection('ft:1UtaMe49j2VUOGu8q6vM6L7xFBABULovYECwMnoX2');
+var poly2009 = ee.FeatureCollection('ft:1OsztQZgtJAiJIsjL1EkRd1IteaKReF-UHRADwfqm');
+var poly2014 = ee.FeatureCollection('ft:1SUadPlAjyhAJO0yNa01Bv3O5sSwwXbNfVWDLNVHs');
+var poly2015 = ee.FeatureCollection('ft:1VyirkENjV108ykAyioxXc-M0ca9Yp3iWDdLFCqZ-');
+
+//Create a dictionary explaining the class meanings  
+var classes = [
+  {'field':0, 'description':'Water'},
+  {'field':1,'description':'Rural/Non-Forest'},
+  {'field':2,'description':'Forest'},
+  {'field':3,'description':'Urban'}
+];
+print('Class Descriptions', classes);
+
+
+//Add an outline of the study of interest
+var outline = ee.FeatureCollection('ft:15pPQTie8l7vQEsdTzoyrgsrJjdRnVZt0ZwPWNsaK');
+
+
+//Define the bands to be used in the classification for the RapidEye imagery
+var REbands = ['b1', 'b2', 'b3', 'b4', 'b5'];
+
+//Define the 2015 rapid eye imagery from the imports section and select the bands to be used for the classification
+var rapidEye = rapidE15.select(REbands);
+
+//Define the training data from the fusion table for the RapidEye image.
+var training =  ee.FeatureCollection('ft:1a9W4OsVLTDGbIpml_ZPwjBG5H3QDndLlgMBzxkVG');
+
+//train and classify the 2015 rapid eye imagery
+// Get the values for all pixels in each polygon in the training
+var train = rapidEye.sampleRegions({
+ // Get the training data from the polygons FeatureCollection.
+  collection: training,
+  // Keep this list of properties from the polygons. This property holds the value of the classifications
+  properties: ['field'],
+  // Set the scale to the same resolution of the image: 5 meters
+  scale: 5
+});
+
+// Create an max entropy classifier for RapidEye
+var me = ee.Classifier.gmoMaxEnt()
+  .train(train, 'field', REbands);
+//Create a random forest classifier for RapidEye using 10 trees.
+var rf = ee.Classifier.randomForest(10)
+  .train(train, 'field', REbands);
+  
+// Classify the image for maximum entropy.
+var mecl = rapidEye.classify(me);
+//Classify the image for random forest
+var rfcl = rapidEye.classify(rf);
+//Clip the classified images to the outline.
+var clipME = mecl.clip(outline)
+  .remap([1,2,3,4],[0,1,2,3]);
+
+var clipRF = rfcl.clip(outline)
+  .remap([1,2,3,4],[0,1,2,3]);
+
+// Get the values for all pixels in each polygon in the training
+var train86 = im86.sampleRegions({
+ // Get the training data from the polygons FeatureCollection.
+  collection: poly1986,
+  // Keep this list of properties from the polygons.
+  properties: ['field'],
+  // Set the scale to get Landsat pixels in the polygons.
+  scale: 30
+});
+//Perform the same for the following years of interest
+var train96 = im96.sampleRegions({
+  collection: poly1996,
+  properties: ['field'],
+  scale: 30
+});
+var train00 = im00.sampleRegions({
+  collection: poly2000,
+  properties: ['field'],
+});
+var train09 = im09.sampleRegions({
+  collection: poly2009,
+  properties: ['field'],
+});
+var train14 = im14.sampleRegions({
+  collection: poly2014,
+  properties: ['field'],
+  scale: 30
+})
+var train15 = im15.sampleRegions({
+  collection: poly2015,
+  properties: ['field'],
+  scale: 30
+});
+// Create an max entropy classifier for each year of interest.
+var me86 = ee.Classifier.gmoMaxEnt()
+  .train(train86, 'field', bands5);
+var me96 = ee.Classifier.gmoMaxEnt()
+  .train(train96, 'field', bands5);
+var me00 = ee.Classifier.gmoMaxEnt()
+  .train(train00, 'field', bands5);
+var me09 = ee.Classifier.gmoMaxEnt()
+  .train(train09, 'field', bands5);
+var me14 = ee.Classifier.gmoMaxEnt()
+  .train(train14, 'field', bands);
+var me15 = ee.Classifier.gmoMaxEnt()
+  .train(train15, 'field', bands);
+  
+// Create a Random Forest classifier with 10 trees for each year of interest.
+var rf86 = ee.Classifier.randomForest(10)
+  .train(train86, 'field', bands5);
+var rf96 = ee.Classifier.randomForest(10)
+  .train(train96, 'field', bands5);
+var rf00 = ee.Classifier.randomForest(10)
+  .train(train00, 'field', bands5);
+var rf09 = ee.Classifier.randomForest(10)
+  .train(train09, 'field', bands5);
+var rf14 = ee.Classifier.randomForest(10)
+  .train(train14, 'field', bands);
+var rf15 = ee.Classifier.randomForest(10)
+  .train(train15, 'field', bands);
+
+  
+// Classify the image for maximum entropy.
+var me86cl = im86.classify(me86);
+var me96cl = im96.classify(me96);
+var me00cl = im00.classify(me00);
+var me09cl = im09.classify(me09);
+var me14cl = im14.classify(me14);
+var me15cl = im15.classify(me15);
+
+// Classify the image for random forest.
+var rf86cl = im86.classify(rf86);
+var rf96cl = im96.classify(rf96);
+var rf00cl = im00.classify(rf00);
+var rf09cl = im09.classify(rf09);
+var rf14cl = im14.classify(rf14);
+var rf15cl = im15.classify(rf15);
+
+
+// Sample the input with a random seed to get validation data for maximum entropy.
+var me14val = im14.addBands(clipME).sample({
+  numPixels: 5000,
+  seed: 1,
+  scale: 30
+  // Filter the result to get rid of any null pixels.
+}).filter(ee.Filter.neq('remapped', null));
+
+// Classify the validation data.
+var me14validated = me14val.classify(me14);
+
+// Get a confusion matrix representing expected accuracy.
+var testAccuracyME14 = me14validated.errorMatrix('remapped', 'classification');
+print('Validation error matrix 2014 (Max Ent): ', testAccuracyME14);
+print('Validation overall accuracy 2014 (Max Ent): ', testAccuracyME14.accuracy());
+print('Kappa Coefficient 2014 (Max Ent): ', testAccuracyME14.kappa());
+
+// Sample the input with a random seed to get validation data for random forest.
+var rf14val = im14.addBands(clipME).sample({
+  numPixels: 5000,
+  seed: 1,
+  scale: 30
+  // Filter the result to get rid of any null pixels.
+}).filter(ee.Filter.neq('remapped', null));
+
+// Classify the validation data.
+var rf14validated = rf14val.classify(rf14);
+
+// Get a confusion matrix representing expected accuracy.
+var testAccuracyRF14 = rf14validated.errorMatrix('remapped', 'classification');
+print('Validation error matrix 2014 (Random Forest): ', testAccuracyRF14);
+print('Validation overall accuracy 2014 (Random Forest): ', testAccuracyRF14.accuracy());
+print('Kappa Coefficient 2014 RF: ', testAccuracyRF14.kappa());
+
+// Sample the input with a random seed to get validation data for maximum entropy 2015.
+var me15val = im15.addBands(clipME).sample({
+  numPixels: 5000,
+  seed: 1,
+  scale: 30
+  // Filter the result to get rid of any null pixels.
+}).filter(ee.Filter.neq('remapped', null));
+
+// Classify the validation data.
+var me15validated = me15val.classify(me15);
+
+// Get a confusion matrix representing expected accuracy and kappa coefficient.
+var testAccuracyME15 = me15validated.errorMatrix('remapped', 'classification');
+print('Validation error matrix 2015 (Max Ent): ', testAccuracyME15);
+print('Validation overall accuracy 2015 (Max Ent): ', testAccuracyME15.accuracy());
+print('Kappa Coefficient 2015 (Max Ent): ', testAccuracyME15.kappa());
+
+// Sample the input with a random seed to get validation data for random forest.
+var rf15val = im15.addBands(clipME).sample({
+  numPixels: 5000,
+  seed: 1,
+  scale: 30
+  // Filter the result to get rid of any null pixels.
+}).filter(ee.Filter.neq('remapped', null));
+
+// Classify the validation data.
+var rf15validated = rf15val.classify(rf15);
+
+// Get a confusion matrix representing expected accuracy and kappa coefficient.
+var testAccuracyRF15 = rf15validated.errorMatrix('remapped', 'classification');
+print('Validation error matrix 2015 (Random Forest): ', testAccuracyRF15);
+print('Validation overall accuracy 2015 (Random Forest): ', testAccuracyRF15.accuracy());
+print('Kappa Coefficient 2015 (Random Forest): ', testAccuracyRF15.kappa());
+
+//Clip the classified images for display to the polygon outline of the area of interest.
+var meclip86 = me86cl.clip(outline);
+var meclip96 = me96cl.clip(outline);
+var meclip00 = me00cl.clip(outline);
+var meclip09 = me09cl.clip(outline);
+var meclip14 = me14cl.clip(outline);
+var meclip15 = me15cl.clip(outline);
+
+var rfclip86 = rf86cl.clip(outline);
+var rfclip96 = rf96cl.clip(outline);
+var rfclip00 = rf00cl.clip(outline);
+var rfclip09 = rf09cl.clip(outline);
+var rfclip14 = rf14cl.clip(outline);
+var rfclip15 = rf15cl.clip(outline);
+
+
+//Create a palette to display the classes.
+var palette =[ '053CA2', // water
+              'F0E72E',//pasture/crop
+              '0E8007',//Forest
+              'B63613',//Urban/Bare
+              //'6a2325'//crop
+              ];
+//Set the Center of the Map
+Map.setCenter(-88.9419702, 14.0237761, 12);
+//Add layers to be visible on the screen
+
+Map.addLayer(rfclip86, {min: 0, max: 3, palette: palette}, 'Random Forest 1986');
+Map.addLayer(rfclip96, {min: 0, max: 3, palette: palette}, 'Random Forest 1996');
+Map.addLayer(rfclip00, {min: 0, max: 3, palette: palette}, 'Random Forest 2000');
+Map.addLayer(rfclip09, {min: 0, max: 3, palette: palette}, 'Random Forest 2009');
+Map.addLayer(meclip14, {min: 0, max: 3, palette: palette}, 'Maximum Entropy 2014');
+Map.addLayer(meclip15, {min: 0, max: 3, palette: palette}, 'Maximum Entropy 2015');
+Map.addLayer(clipME, {palette: palette, min: 0,max: 3}, 'RapidEye Maximum Entropy 2015');
+//Calculate the area for 1986 random forest classification. The .pixelArea function calculates the area 
+//of each pixel and is multiplied by 1e-6 to convert to kilometers. 
+var area86 = rf86cl.eq([0, 1, 2, 3]).multiply(ee.Image.pixelArea()).multiply(1e-6);
+var red86 = area86.reduceRegion({
+  reducer: ee.Reducer.sum(),
+  scale: 30,
+  geometry: outline
+});
+
+print('1986 Area km^2: ', red86);
+
+//Following the above example, calculate the area for each year of interest.
+var area96 = rf96cl.eq([0, 1, 2, 3]).multiply(ee.Image.pixelArea()).multiply(1e-6);
+var red96 = area96.reduceRegion({
+  reducer: ee.Reducer.sum(),
+  scale: 30,
+  geometry: outline
+});
+print('1996 Area km^2: ', red96);
+
+var area00 = rf00cl.eq([0, 1, 2, 3]).multiply(ee.Image.pixelArea()).multiply(1e-6);
+var red00 = area00.reduceRegion({
+  reducer: ee.Reducer.sum(),
+  scale: 30,
+  geometry: outline
+});
+print('2000 Area km^2: ', red00);
+
+var area09 = rf09cl.eq([0, 1, 2, 3]).multiply(ee.Image.pixelArea()).multiply(1e-6);
+var red09 = area09.reduceRegion({
+  reducer: ee.Reducer.sum(),
+  scale: 30,
+  geometry: outline
+});
+print('2009 Area km^2: ', red09);
+
+var area14 = me14cl.eq([0, 1, 2, 3]).multiply(ee.Image.pixelArea()).multiply(1e-6);
+var red14 = area14.reduceRegion({
+  reducer: ee.Reducer.sum(),
+  scale: 30,
+  geometry: outline
+});
+print('2014 Area km^2: ', red14);
+
+var area15 = me15cl.eq([0, 1, 2, 3]).multiply(ee.Image.pixelArea()).multiply(1e-6);
+var red15 = area15.reduceRegion({
+  reducer: ee.Reducer.sum(),
+  scale: 30,
+  geometry: outline
+});
+print('2015 Area km^2: ', red15);
+
+var areaRE15 = clipME.eq([0, 1, 2, 3]).multiply(ee.Image.pixelArea()).multiply(1e-6);
+var redRE15 = areaRE15.reduceRegion({
+  reducer: ee.Reducer.sum(),
+  scale: 30,
+  geometry: outline
+});
+print('Rapid Eye Area km^2 2015: ', redRE15);
+
+//Fusion table with all of the areas calculated previously.
+var areas = ee.FeatureCollection('ft:1lL7RDrtsfe5FArGPnMiCOZflpL179N0jh3oPLth7');
+//Creating a line chart to visually see the changes of land use classes over time
+var chart = Chart.feature.byFeature(areas, 'Year')
+  .setChartType('LineChart')
+//set the options for the chart such as the x and y axis titles and the main title
+  .setOptions({
+    title: 'Area for Each Classification (km^2)',
+    hAxis: {
+      title: 'Year',
+    },
+    vAxis: {
+      title: 'Area (km^2)'
+    },
+//specify colors for each class for display on the line chart
+    series: {
+      0: {color: 'green'},
+      1: {color: 'orange'},
+      2: {color: 'red'},
+      3: {color: 'blue'}},
+//set the width of the lines and the size of each point on the chart
+    lineWidth: 1,
+    pointSize: 3
+  });
+print(chart);
+
+//If interested, images and/or information can be exported into a google drive as a tiff file (image) or csv file (tables). 
+//Below is an example of exporting the 2014 image in a tiff file. This line of code is commented out. 
+
+/*Export.image(rf14cl, '2014_Image', {
+  scale:30,
+  region: outline
+});*/
